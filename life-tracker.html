@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<meta name="theme-color" content="#080810"/>
+<title>AR · Life Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.8.0/Recharts.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#080810;--bg1:#0e0e1a;--bg2:#13131f;--bg3:#1a1a2a;--bg4:#202030;
+  --border:#252538;--border2:#2e2e48;--border3:#3a3a58;
+  --teal:#00e5b0;--teal2:#00b88a;--teal3:rgba(0,229,176,0.08);--teal4:rgba(0,229,176,0.15);
+  --violet:#9b8cff;--violet2:#6c5ce7;--violet3:rgba(155,140,255,0.08);--violet4:rgba(155,140,255,0.15);
+  --amber:#ffb547;--amber2:rgba(255,181,71,0.12);
+  --rose:#ff6b8a;--rose2:rgba(255,107,138,0.12);
+  --sky:#38bdf8;--sky2:rgba(56,189,248,0.10);
+  --text:#f0f0ff;--text2:#8888aa;--text3:#4a4a6a;--text4:#2e2e48;
+  --font:'Outfit',sans-serif;--mono:'JetBrains Mono',monospace;
+  --r:14px;--r-sm:9px;--r-xs:6px;
+  --shadow:0 4px 24px rgba(0,0,0,0.5);
+  --shadow-sm:0 2px 12px rgba(0,0,0,0.4);
+}
+html{height:100%;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100%;line-height:1.5}
+#root{min-height:100vh;display:flex;flex-direction:column}
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+button,input,select,textarea{font-family:var(--font);-webkit-appearance:none;appearance:none}
+input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;width:100%}
+input[type=range]::-webkit-slider-track{height:4px;border-radius:2px;background:var(--border2)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--teal);margin-top:-6px;cursor:pointer}
+input[type=date]{color-scheme:dark}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.fade-up{animation:fadeUp .25s ease both}
+/* MOBILE NAV */
+@media(max-width:640px){
+  .desk-only{display:none!important}
+  .mob-nav{display:flex!important}
+  .main-pad{padding:16px 12px 90px!important}
+  .header-inner{padding:0 16px!important}
+  .stats-grid{grid-template-columns:1fr 1fr!important}
+  .form-row-2{grid-template-columns:1fr!important}
+  .section-banner{padding:14px 16px!important}
+}
+@media(min-width:641px){
+  .mob-nav{display:none!important}
+  .main-pad{padding:28px 24px!important}
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef,useMemo,useCallback}=React;
+const {LineChart,Line,BarChart,Bar,XAxis,YAxis,Tooltip,ResponsiveContainer,AreaChart,Area}=Recharts;
+
+/* ── STORAGE ─────────────────────────────────────────────────────────────── */
+const KEY='ar_tracker_v3';
+const save=(data)=>{try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){}};
+const load=()=>{try{const d=localStorage.getItem(KEY);return d?JSON.parse(d):null}catch{return null}};
+
+const DEFAULT_STATE={
+  jobs:[],skills:[],preps:[],
+  logs:{},goals:[],wins:[],journals:{},
+  customFields:{
+    career:[
+      {id:'cf1',label:'Company',type:'text',key:'company',required:true},
+      {id:'cf2',label:'Role',type:'text',key:'role',required:true},
+      {id:'cf3',label:'Stage',type:'select',key:'stage',options:['Applied','Phone Screen','Interview','Final Round','Offer','Rejected'],required:true},
+      {id:'cf4',label:'Date Applied',type:'date',key:'date'},
+      {id:'cf5',label:'Salary Range',type:'text',key:'salary'},
+      {id:'cf6',label:'Location',type:'text',key:'location'},
+      {id:'cf7',label:'Notes',type:'textarea',key:'notes'},
+    ],
+    skill:[
+      {id:'sf1',label:'Skill / Course Name',type:'text',key:'name',required:true},
+      {id:'sf2',label:'Category',type:'select',key:'category',options:['Data Analytics','Programming','Visualization','Statistics','ML/AI','Soft Skills','Other']},
+      {id:'sf3',label:'Target Hours',type:'number',key:'target'},
+      {id:'sf4',label:'Hours Done',type:'number',key:'done'},
+      {id:'sf5',label:'Platform',type:'text',key:'platform'},
+      {id:'sf6',label:'Certificate?',type:'select',key:'cert',options:['Yes','No','In Progress']},
+    ],
+    prep:[
+      {id:'pp1',label:'Topic',type:'text',key:'topic',required:true},
+      {id:'pp2',label:'Type',type:'select',key:'type',options:['Behavioural','Technical','SQL','Python','Statistics','Case Study','Presentation']},
+      {id:'pp3',label:'Confidence (1-10)',type:'range',key:'confidence',min:1,max:10},
+      {id:'pp4',label:'Duration (mins)',type:'number',key:'duration'},
+      {id:'pp5',label:'Notes / Takeaways',type:'textarea',key:'notes'},
+    ],
+    habit:[
+      {id:'hb1',label:'Exercise',key:'exercise',icon:'🏃'},
+      {id:'hb2',label:'Sleep 7h+',key:'sleep',icon:'😴'},
+      {id:'hb3',label:'Reading',key:'reading',icon:'📖'},
+      {id:'hb4',label:'Journaling',key:'journaling',icon:'✍️'},
+      {id:'hb5',label:'No Junk Food',key:'nojunk',icon:'🥗'},
+      {id:'hb6',label:'Meditation',key:'meditation',icon:'🧘'},
+      {id:'hb7',label:'Learning',key:'learning',icon:'💡'},
+    ],
+  },
+  lastSaved:null,
+};
+
+/* ── HELPERS ─────────────────────────────────────────────────────────────── */
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+const today=()=>new Date().toISOString().split('T')[0];
+const fmt=(d)=>{if(!d)return'';const dt=new Date(d+'T00:00:00');return dt.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})};
+const fmtShort=(d)=>{if(!d)return'';const dt=new Date(d+'T00:00:00');return dt.toLocaleDateString('en-GB',{day:'2-digit',month:'short'})};
+const last7Days=()=>Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-6+i);return d.toISOString().split('T')[0];});
+const dayLabel=(iso)=>new Date(iso+'T00:00:00').toLocaleDateString('en-US',{weekday:'short'});
+const clamp=(v,min,max)=>Math.min(max,Math.max(min,v));
+
+/* ── DESIGN ATOMS ────────────────────────────────────────────────────────── */
+const clr={
+  teal:'var(--teal)',violet:'var(--violet)',amber:'var(--amber)',
+  rose:'var(--rose)',sky:'var(--sky)',gray:'var(--text3)',
+};
+const stageColor={'Applied':'teal','Phone Screen':'sky','Interview':'amber','Final Round':'amber','Offer':'teal','Rejected':'rose'};
+const stageBg={'Applied':'var(--teal3)','Phone Screen':'var(--sky2)','Interview':'var(--amber2)','Final Round':'var(--amber2)','Offer':'var(--teal3)','Rejected':'var(--rose2)'};
+const stageClr={'Applied':'var(--teal)','Phone Screen':'var(--sky)','Interview':'var(--amber)','Final Round':'var(--amber)','Offer':'var(--teal)','Rejected':'var(--rose)'};
+
+/* ── UI COMPONENTS ───────────────────────────────────────────────────────── */
+const Card=({children,style={},glow})=>
+  <div style={{background:'var(--bg2)',border:`1px solid ${glow==='teal'?'var(--border2)':glow==='violet'?'var(--border2)':'var(--border)'}`,borderRadius:'var(--r)',padding:20,boxShadow:glow?`0 0 0 1px ${glow==='teal'?'var(--teal4)':'var(--violet4)'},var(--shadow-sm)`:'var(--shadow-sm)',...style}}>{children}</div>;
+
+const Tag=({label,color='teal'})=>{
+  const bg=color==='teal'?'var(--teal3)':color==='violet'?'var(--violet3)':color==='amber'?'var(--amber2)':color==='sky'?'var(--sky2)':'var(--rose2)';
+  const fg=color==='teal'?'var(--teal)':color==='violet'?'var(--violet)':color==='amber'?'var(--amber)':color==='sky'?'var(--sky)':'var(--rose)';
+  return <span style={{fontSize:10,fontWeight:600,fontFamily:'var(--mono)',letterSpacing:'0.06em',padding:'3px 8px',borderRadius:20,background:bg,color:fg,whiteSpace:'nowrap'}}>{label.toUpperCase()}</span>;
+};
+
+const Mono=({children,style={}})=><span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',...style}}>{children}</span>;
+
+const Lbl=({children,style={}})=><div style={{fontFamily:'var(--mono)',fontSize:10,fontWeight:500,letterSpacing:'0.08em',color:'var(--text3)',marginBottom:6,textTransform:'uppercase',...style}}>{children}</div>;
+
+const Btn=({children,onClick,variant='teal',size='md',style={},disabled=false})=>{
+  const bg={teal:'var(--teal)',violet:'var(--violet)',ghost:'transparent',danger:'var(--rose2)',amber:'var(--amber2)'};
+  const fg={teal:'#000',violet:'#000',ghost:'var(--text2)',danger:'var(--rose)',amber:'var(--amber)'};
+  const border={teal:'none',violet:'none',ghost:'1px solid var(--border2)',danger:'1px solid rgba(255,107,138,0.25)',amber:'1px solid rgba(255,181,71,0.25)'};
+  const p={md:'9px 18px',sm:'6px 12px',lg:'12px 24px',icon:'9px'};
+  return <button onClick={onClick} disabled={disabled}
+    style={{background:bg[variant],color:fg[variant],border:border[variant],borderRadius:'var(--r-sm)',padding:p[size],fontSize:size==='sm'?12:13,fontWeight:500,cursor:disabled?'not-allowed':'pointer',opacity:disabled?0.5:1,transition:'opacity .15s,transform .1s',fontFamily:'var(--font)',display:'inline-flex',alignItems:'center',gap:6,whiteSpace:'nowrap',...style}}
+    onMouseEnter={e=>{if(!disabled)e.currentTarget.style.opacity='.82'}}
+    onMouseLeave={e=>{if(!disabled)e.currentTarget.style.opacity='1'}}
+    onMouseDown={e=>{if(!disabled)e.currentTarget.style.transform='scale(0.97)'}}
+    onMouseUp={e=>{e.currentTarget.style.transform='scale(1)'}}
+  >{children}</button>;
+};
+
+const TextIn=({value,onChange,placeholder,type='text',style={}})=>
+  <input type={type} value={value||''} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
+    style={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:'var(--r-sm)',padding:'10px 13px',color:'var(--text)',fontSize:13,width:'100%',outline:'none',transition:'border .15s',...style}}
+    onFocus={e=>e.target.style.borderColor='var(--border3)'}
+    onBlur={e=>e.target.style.borderColor='var(--border2)'}/>;
+
+const TextArea=({value,onChange,placeholder,rows=3,style={}})=>
+  <textarea value={value||''} onChange={e=>onChange(e.target.value)} placeholder={placeholder} rows={rows}
+    style={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:'var(--r-sm)',padding:'10px 13px',color:'var(--text)',fontSize:13,width:'100%',outline:'none',resize:'vertical',transition:'border .15s',...style}}
+    onFocus={e=>e.target.style.borderColor='var(--border3)'}
+    onBlur={e=>e.target.style.borderColor='var(--border2)'}/>;
+
+const Sel=({value,onChange,options,style={}})=>
+  <select value={value||''} onChange={e=>onChange(e.target.value)}
+    style={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:'var(--r-sm)',padding:'10px 13px',color:value?'var(--text)':'var(--text3)',fontSize:13,width:'100%',outline:'none',cursor:'pointer',...style}}>
+    {options.map(o=>typeof o==='string'?<option key={o} value={o}>{o}</option>:<option key={o.v} value={o.v}>{o.l}</option>)}
+  </select>;
+
+const Range=({value,onChange,min=1,max=10,color='teal'})=>{
+  const pct=((value-min)/(max-min))*100;
+  return <div style={{display:'flex',alignItems:'center',gap:10}}>
+    <input type="range" min={min} max={max} value={value}
+      onChange={e=>onChange(Number(e.target.value))}
+      style={{'--pct':pct+'%',background:`linear-gradient(to right,${color==='teal'?'var(--teal)':'var(--violet)'} var(--pct),var(--border2) var(--pct))`}}/>
+    <span style={{fontFamily:'var(--mono)',fontSize:12,color:color==='teal'?'var(--teal)':'var(--violet)',minWidth:22,textAlign:'center'}}>{value}</span>
+  </div>;
+};
+
+const Toggle=({value,onChange,color='teal'})=>{
+  const c=color==='teal'?'var(--teal)':'var(--violet)';
+  return <div onClick={()=>onChange(!value)} style={{width:40,height:22,borderRadius:11,background:value?c:'var(--border2)',cursor:'pointer',position:'relative',transition:'background .2s',flexShrink:0}}>
+    <div style={{width:16,height:16,borderRadius:8,background:'white',position:'absolute',top:3,left:value?21:3,transition:'left .2s'}}/>
+  </div>;
+};
+
+const Empty=({icon,msg})=>
+  <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:10,padding:'40px 20px',color:'var(--text3)',textAlign:'center'}}>
+    <span style={{fontSize:32}}>{icon}</span>
+    <span style={{fontSize:13}}>{msg}</span>
+  </div>;
+
+const StatCard=({value,label,color='teal',sub})=>{
+  const c=color==='teal'?'var(--teal)':color==='violet'?'var(--violet)':color==='amber'?'var(--amber)':'var(--rose)';
+  return <Card style={{textAlign:'center',padding:'16px 12px'}}>
+    <div style={{fontSize:28,fontWeight:800,color:c,letterSpacing:'-1px',lineHeight:1}}>{value}</div>
+    <div style={{fontSize:11,color:'var(--text3)',marginTop:5,fontFamily:'var(--mono)',letterSpacing:'0.05em'}}>{label}</div>
+    {sub&&<div style={{fontSize:11,color:'var(--text2)',marginTop:3}}>{sub}</div>}
+  </Card>;
+};
+
+const Divider=()=><div style={{height:1,background:'var(--border)',margin:'16px 0'}}/>;
+
+const ProgressBar=({pct,color='teal',label})=>{
+  const c=color==='teal'?'var(--teal)':'var(--violet)';
+  return <div>
+    {label&&<div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--text3)',marginBottom:4}}>
+      <span>{label}</span><span style={{fontFamily:'var(--mono)'}}>{Math.round(pct)}%</span>
+    </div>}
+    <div style={{background:'var(--bg4)',borderRadius:4,height:6,overflow:'hidden'}}>
+      <div style={{height:'100%',borderRadius:4,background:c,width:`${clamp(pct,0,100)}%`,transition:'width .5s ease'}}/>
+    </div>
+  </div>;
+};
+
+/* ── DYNAMIC FIELD RENDERER ──────────────────────────────────────────────── */
+const DynField=({field,value,onChange})=>{
+  if(field.type==='text')return <TextIn value={value} onChange={onChange} placeholder={field.label}/>;
+  if(field.type==='number')return <TextIn value={value} onChange={onChange} placeholder={field.label} type="number"/>;
+  if(field.type==='date')return <TextIn value={value} onChange={onChange} placeholder="YYYY-MM-DD" type="date"/>;
+  if(field.type==='textarea')return <TextArea value={value} onChange={onChange} placeholder={field.label}/>;
+  if(field.type==='select')return <Sel value={value} onChange={onChange} options={[`Select ${field.label}`,...(field.options||[])]}/>;
+  if(field.type==='range')return <Range value={Number(value)||field.min||1} onChange={onChange} min={field.min||1} max={field.max||10}/>;
+  return null;
+};
+
+/* ── FIELD MANAGER MODAL ─────────────────────────────────────────────────── */
+function FieldManager({fields,onSave,onClose,title}){
+  const [localFields,setLocalFields]=useState(fields.map(f=>({...f})));
+  const [newF,setNewF]=useState({label:'',type:'text',options:''});
+  const types=[{v:'text',l:'Text'},{v:'number',l:'Number'},{v:'date',l:'Date'},{v:'select',l:'Dropdown'},{v:'textarea',l:'Long Text'},{v:'range',l:'Slider (1-10)'}];
+  const addField=()=>{
+    if(!newF.label.trim())return;
+    const f={id:uid(),label:newF.label,type:newF.type,key:newF.label.toLowerCase().replace(/\s+/g,'_')+uid().slice(-3)};
+    if(newF.type==='select'&&newF.options)f.options=newF.options.split(',').map(s=>s.trim()).filter(Boolean);
+    setLocalFields(p=>[...p,f]);
+    setNewF({label:'',type:'text',options:''});
+  };
+  const removeField=id=>setLocalFields(p=>p.filter(f=>f.id!==id));
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}}
+      onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:'var(--r)',width:'100%',maxWidth:520,maxHeight:'85vh',overflow:'auto',boxShadow:'var(--shadow)'}}>
+        <div style={{padding:'18px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky',top:0,background:'var(--bg2)',zIndex:1}}>
+          <span style={{fontWeight:600,fontSize:15}}>⚙ Manage Fields — {title}</span>
+          <Btn onClick={onClose} variant='ghost' size='sm'>✕ Close</Btn>
+        </div>
+        <div style={{padding:20}}>
+          <Lbl>Current Fields</Lbl>
+          <div style={{display:'flex',flexDirection:'column',gap:6,marginBottom:16}}>
+            {localFields.map((f,i)=>(
+              <div key={f.id} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'var(--bg3)',borderRadius:'var(--r-sm)',border:'1px solid var(--border)'}}>
+                <span style={{fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)',minWidth:20}}>{i+1}.</span>
+                <span style={{flex:1,fontSize:13}}>{f.label}</span>
+                <Tag label={f.type} color='violet'/>
+                {!f.required&&<Btn onClick={()=>removeField(f.id)} variant='danger' size='sm' style={{padding:'4px 8px',fontSize:11}}>✕</Btn>}
+                {f.required&&<Tag label="required" color='amber'/>}
+              </div>
+            ))}
+          </div>
+          <Divider/>
+          <Lbl>Add New Field</Lbl>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            <TextIn value={newF.label} onChange={v=>setNewF(p=>({...p,label:v}))} placeholder="Field label (e.g. LinkedIn URL)"/>
+            <Sel value={newF.type} onChange={v=>setNewF(p=>({...p,type:v}))} options={types}/>
+            {newF.type==='select'&&<TextIn value={newF.options} onChange={v=>setNewF(p=>({...p,options:v}))} placeholder="Options: Option A, Option B, Option C"/>}
+            <Btn onClick={addField} variant='violet' style={{width:'100%',justifyContent:'center'}}>+ Add Field</Btn>
+          </div>
+          <div style={{display:'flex',gap:8,marginTop:20}}>
+            <Btn onClick={()=>onSave(localFields)} style={{flex:1,justifyContent:'center'}}>✓ Save Changes</Btn>
+            <Btn onClick={onClose} variant='ghost' style={{flex:1,justifyContent:'center'}}>Cancel</Btn>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── HABIT MANAGER MODAL ─────────────────────────────────────────────────── */
+function HabitManager({habits,onSave,onClose}){
+  const [local,setLocal]=useState(habits.map(h=>({...h})));
+  const [nLabel,setNLabel]=useState('');const [nIcon,setNIcon]=useState('✅');
+  const add=()=>{if(!nLabel.trim())return;setLocal(p=>[...p,{id:uid(),label:nLabel,key:nLabel.toLowerCase().replace(/\s+/g,'_')+uid().slice(-3),icon:nIcon}]);setNLabel('');setNIcon('✅');};
+  const remove=id=>setLocal(p=>p.filter(h=>h.id!==id));
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}
+      onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:'var(--r)',width:'100%',maxWidth:460,maxHeight:'85vh',overflow:'auto',boxShadow:'var(--shadow)'}}>
+        <div style={{padding:'18px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky',top:0,background:'var(--bg2)',zIndex:1}}>
+          <span style={{fontWeight:600,fontSize:15}}>🎯 Manage Habits</span>
+          <Btn onClick={onClose} variant='ghost' size='sm'>✕</Btn>
+        </div>
+        <div style={{padding:20}}>
+          <Lbl>Your Habits</Lbl>
+          <div style={{display:'flex',flexDirection:'column',gap:6,marginBottom:16}}>
+            {local.map(h=>(
+              <div key={h.id} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'var(--bg3)',borderRadius:'var(--r-sm)',border:'1px solid var(--border)'}}>
+                <span style={{fontSize:16}}>{h.icon}</span>
+                <span style={{flex:1,fontSize:13}}>{h.label}</span>
+                <Btn onClick={()=>remove(h.id)} variant='danger' size='sm' style={{padding:'4px 8px',fontSize:11}}>✕</Btn>
+              </div>
+            ))}
+          </div>
+          <Divider/>
+          <Lbl>Add Habit</Lbl>
+          <div style={{display:'flex',gap:8,marginBottom:8}}>
+            <TextIn value={nIcon} onChange={setNIcon} placeholder="🏃" style={{width:56,flex:'none',textAlign:'center'}}/>
+            <TextIn value={nLabel} onChange={setNLabel} placeholder="Habit name"/>
+          </div>
+          <Btn onClick={add} variant='violet' style={{width:'100%',justifyContent:'center',marginBottom:16}}>+ Add Habit</Btn>
+          <div style={{display:'flex',gap:8}}>
+            <Btn onClick={()=>onSave(local)} style={{flex:1,justifyContent:'center'}}>✓ Save</Btn>
+            <Btn onClick={onClose} variant='ghost' style={{flex:1,justifyContent:'center'}}>Cancel</Btn>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── CAREER DASHBOARD ────────────────────────────────────────────────────── */
+function CareerDash({state,dispatch}){
+  const {jobs=[],skills=[],preps=[],customFields}=state;
+  const [tab,setTab]=useState('pipeline');
+  const [showForm,setShowForm]=useState(false);
+  const [form,setForm]=useState({});
+  const [editId,setEditId]=useState(null);
+  const [manageField,setManageField]=useState(null); // 'career'|'skill'|'prep'
+  const [search,setSearch]=useState('');
+
+  const careerFields=customFields.career;
+  const skillFields=customFields.skill;
+  const prepFields=customFields.prep;
+
+  const openAdd=()=>{
+    const defaults={};
+    const fields=tab==='pipeline'?careerFields:tab==='skills'?skillFields:prepFields;
+    fields.forEach(f=>{if(f.type==='range')defaults[f.key]=f.min||1;else if(f.type==='select'&&f.options)defaults[f.key]=f.options[0];else defaults[f.key]='';});
+    setForm(defaults);setEditId(null);setShowForm(true);
+  };
+  const openEdit=(item)=>{setForm({...item});setEditId(item.id);setShowForm(true);};
+  const saveItem=()=>{
+    const fields=tab==='pipeline'?careerFields:tab==='skills'?skillFields:prepFields;
+    const req=fields.filter(f=>f.required).map(f=>f.key);
+    if(req.some(k=>!form[k]))return;
+    const item={...form,id:editId||uid(),createdAt:editId?form.createdAt:today()};
+    if(tab==='pipeline')dispatch({type:'SET',key:'jobs',value:editId?jobs.map(j=>j.id===editId?item:j):[item,...jobs]});
+    else if(tab==='skills')dispatch({type:'SET',key:'skills',value:editId?skills.map(s=>s.id===editId?item:s):[item,...skills]});
+    else dispatch({type:'SET',key:'preps',value:editId?preps.map(p=>p.id===editId?item:p):[item,...preps]});
+    setShowForm(false);setForm({});setEditId(null);
+  };
+  const delItem=(id)=>{
+    if(tab==='pipeline')dispatch({type:'SET',key:'jobs',value:jobs.filter(j=>j.id!==id)});
+    else if(tab==='skills')dispatch({type:'SET',key:'skills',value:skills.filter(s=>s.id!==id)});
+    else dispatch({type:'SET',key:'preps',value:preps.filter(p=>p.id!==id)});
+  };
+  const updateField=(field,v)=>setForm(p=>({...p,[field]:v}));
+  const curFields=tab==='pipeline'?careerFields:tab==='skills'?skillFields:prepFields;
+  const curFieldKey=tab==='pipeline'?'career':tab==='skills'?'skill':'prep';
+  const saveFields=(fields)=>{dispatch({type:'SET_FIELDS',section:curFieldKey,fields});setManageField(null);};
+
+  const filteredJobs=jobs.filter(j=>!search||(j.company||'').toLowerCase().includes(search.toLowerCase())||(j.role||'').toLowerCase().includes(search.toLowerCase()));
+
+  const momentum=useMemo(()=>{
+    const ago=new Date(Date.now()-7*86400000);
+    const rj=jobs.filter(j=>j.createdAt&&new Date(j.createdAt)>ago).length;
+    const rp=preps.filter(p=>p.createdAt&&new Date(p.createdAt)>ago).length;
+    const hrs=skills.reduce((a,s)=>a+Number(s.done||0),0);
+    return Math.min(100,rj*12+rp*8+Math.round(hrs));
+  },[jobs,skills,preps]);
+
+  const stages=['Applied','Phone Screen','Interview','Final Round','Offer','Rejected'];
+  const stageStats=stages.map(s=>({name:s.replace(' ','\n'),count:jobs.filter(j=>j.stage===s).length}));
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',gap:16}}>
+      {manageField&&<FieldManager fields={customFields[manageField]} title={manageField} onSave={saveFields} onClose={()=>setManageField(null)}/>}
+
+      {/* Stats */}
+      <div className="stats-grid" style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10}}>
+        <StatCard value={jobs.length} label="Applications" color="teal"/>
+        <StatCard value={jobs.filter(j=>['Interview','Final Round'].includes(j.stage)).length} label="Active" color="amber"/>
+        <StatCard value={jobs.filter(j=>j.stage==='Offer').length} label="Offers" color="teal"/>
+        <StatCard value={momentum+'%'} label="Momentum" color="violet"/>
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:'flex',gap:3,background:'var(--bg1)',borderRadius:'var(--r)',padding:4,border:'1px solid var(--border)'}}>
+        {[['pipeline','📋 Pipeline'],['skills','📚 Skills'],['prep','🎯 Prep']].map(([k,l])=>(
+          <button key={k} onClick={()=>{setTab(k);setShowForm(false);}} style={{flex:1,padding:'9px 4px',borderRadius:10,border:'none',background:tab===k?'var(--bg3)':'transparent',color:tab===k?'var(--text)':'var(--text3)',fontSize:13,fontWeight:tab===k?600:400,cursor:'pointer',fontFamily:'var(--font)',transition:'all .2s'}}>{l}</button>
+        ))}
+      </div>
+
+      {/* Toolbar */}
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+        {tab==='pipeline'&&<TextIn value={search} onChange={setSearch} placeholder="🔍 Search company or role..." style={{flex:1,minWidth:160}}/>}
+        <div style={{display:'flex',gap:8,marginLeft:'auto'}}>
+          <Btn onClick={()=>setManageField(curFieldKey)} variant='ghost' size='sm'>⚙ Fields</Btn>
+          <Btn onClick={openAdd}>+ Add {tab==='pipeline'?'Job':tab==='skills'?'Skill':'Session'}</Btn>
+        </div>
+      </div>
+
+      {/* Inline Form */}
+      {showForm&&<Card glow='teal' style={{animation:'fadeUp .2s ease'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+          <span style={{fontWeight:600,fontSize:14}}>{editId?'Edit':'New'} {tab==='pipeline'?'Application':tab==='skills'?'Skill':'Session'}</span>
+          <Btn onClick={()=>{setShowForm(false);setEditId(null);}} variant='ghost' size='sm'>✕</Btn>
+        </div>
+        <div style={{display:'grid',gap:10}}>
+          {curFields.map(f=>(
+            <div key={f.id}>
+              <Lbl>{f.label}{f.required&&<span style={{color:'var(--rose)'}}> *</span>}</Lbl>
+              <DynField field={f} value={form[f.key]} onChange={v=>updateField(f.key,v)}/>
+            </div>
+          ))}
+        </div>
+        <div style={{display:'flex',gap:8,marginTop:14}}>
+          <Btn onClick={saveItem} style={{flex:1,justifyContent:'center'}}>✓ Save</Btn>
+          <Btn onClick={()=>{setShowForm(false);setEditId(null);}} variant='ghost' style={{flex:1,justifyContent:'center'}}>Cancel</Btn>
+        </div>
+      </Card>}
+
+      {/* Pipeline */}
+      {tab==='pipeline'&&<>
+        {filteredJobs.length===0&&<Empty icon="💼" msg={jobs.length?'No matches. Try a different search.':'No applications yet — add your first one!'}/>}
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {filteredJobs.map(j=>(
+            <div key={j.id} className="fade-up" style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'var(--r)',padding:'14px 16px',display:'flex',alignItems:'center',gap:12,transition:'border .2s'}}
+              onMouseEnter={e=>e.currentTarget.style.borderColor='var(--border2)'}
+              onMouseLeave={e=>e.currentTarget.style.borderColor='var(--border)'}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:4}}>
+                  <span style={{fontWeight:600,fontSize:14}}>{j.company||'—'}</span>
+                  <span style={{color:'var(--text3)',fontSize:13}}>{j.role}</span>
+                </div>
+                <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                  <span style={{fontSize:11,padding:'2px 8px',borderRadius:20,background:stageBg[j.stage]||'var(--bg3)',color:stageClr[j.stage]||'var(--text3)',fontFamily:'var(--mono)',fontWeight:500}}>{j.stage}</span>
+                  {j.date&&<Mono>{fmtShort(j.date)}</Mono>}
+                  {j.location&&<Mono>📍 {j.location}</Mono>}
+                  {j.salary&&<Mono>💰 {j.salary}</Mono>}
+                </div>
+              </div>
+              <div style={{display:'flex',gap:6,flexShrink:0}}>
+                <Btn onClick={()=>openEdit(j)} variant='ghost' size='sm'>✏</Btn>
+                <Btn onClick={()=>delItem(j.id)} variant='danger' size='sm'>✕</Btn>
+              </div>
+            </div>
+          ))}
+        </div>
+        {jobs.length>0&&<Card style={{marginTop:4}}>
+          <Lbl style={{marginBottom:12}}>Stage Funnel</Lbl>
+          <ResponsiveContainer width="100%" height={110}>
+            <BarChart data={stageStats} margin={{top:0,right:0,bottom:0,left:0}}>
+              <XAxis dataKey="name" tick={{fontSize:10,fill:'var(--text3)',fontFamily:'var(--font)'}} axisLine={false} tickLine={false}/>
+              <YAxis hide/>
+              <Tooltip contentStyle={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:8,fontSize:12,fontFamily:'var(--font)'}} cursor={{fill:'rgba(255,255,255,.03)'}}/>
+              <Bar dataKey="count" fill="var(--teal)" radius={[5,5,0,0]}/>
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>}
+      </>}
+
+      {/* Skills */}
+      {tab==='skills'&&<>
+        {skills.length===0&&<Empty icon="📚" msg="No skills tracked yet — add a course!"/>}
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {skills.map(s=>{
+            const pct=s.target?Math.min(100,Math.round(Number(s.done||0)/Number(s.target)*100)):0;
+            return(<div key={s.id} className="fade-up" style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'var(--r)',padding:'14px 16px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+                <div>
+                  <div style={{fontWeight:600,fontSize:14,marginBottom:4}}>{s.name}</div>
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                    {s.category&&<Tag label={s.category} color='violet'/>}
+                    {s.platform&&<Mono>via {s.platform}</Mono>}
+                    {s.cert&&s.cert!=='No'&&<Tag label={s.cert==='Yes'?'✓ Certified':'In Progress'} color='amber'/>}
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:6}}>
+                  <Btn onClick={()=>openEdit(s)} variant='ghost' size='sm'>✏</Btn>
+                  <Btn onClick={()=>delItem(s.id)} variant='danger' size='sm'>✕</Btn>
+                </div>
+              </div>
+              <ProgressBar pct={pct} color='teal' label={`${s.done||0} / ${s.target||'?'} hrs`}/>
+            </div>);
+          })}
+        </div>
+      </>}
+
+      {/* Prep */}
+      {tab==='prep'&&<>
+        {preps.length===0&&<Empty icon="🎯" msg="No prep sessions yet — start practicing!"/>}
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {preps.map(p=>(
+            <div key={p.id} className="fade-up" style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'var(--r)',padding:'14px 16px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                <div>
+                  <div style={{fontWeight:600,fontSize:14,marginBottom:4}}>{p.topic}</div>
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                    {p.type&&<Tag label={p.type} color='violet'/>}
+                    {p.duration&&<Mono>⏱ {p.duration}m</Mono>}
+                    {p.createdAt&&<Mono>{fmtShort(p.createdAt)}</Mono>}
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:6}}>
+                  <Btn onClick={()=>openEdit(p)} variant='ghost' size='sm'>✏</Btn>
+                  <Btn onClick={()=>delItem(p.id)} variant='danger' size='sm'>✕</Btn>
+                </div>
+              </div>
+              {p.confidence&&<ProgressBar pct={(Number(p.confidence)/10)*100} color='violet' label={`Confidence: ${p.confidence}/10`}/>}
+              {p.notes&&<div style={{marginTop:8,fontSize:12,color:'var(--text2)',padding:'8px 10px',background:'var(--bg3)',borderRadius:'var(--r-sm)',lineHeight:1.6}}>{p.notes}</div>}
+            </div>
+          ))}
+        </div>
+      </>}
+    </div>
+  );
+}
+
+/* ── INNER GAME DASHBOARD ────────────────────────────────────────────────── */
+function InnerDash({state,dispatch}){
+  const {logs={},goals=[],wins=[],journals={},customFields}=state;
+  const [tab,setTab]=useState('today');
+  const [manageHabits,setManageHabits]=useState(false);
+  const habits=customFields.habit;
+  const tod=today();
+  const todayLog=logs[tod]||{habits:{},energy:5,mood:5};
+  const [energy,setEnergy]=useState(todayLog.energy||5);
+  const [mood,setMood]=useState(todayLog.mood||5);
+  const [jText,setJText]=useState(journals[tod]||'');
+  const [gText,setGText]=useState('');
+  const [wText,setWText]=useState('');
+  const [saved,setSaved]=useState(false);
+
+  const toggleHabit=h=>{
+    const cur=todayLog.habits||{};
+    dispatch({type:'SET_LOG',date:tod,data:{...todayLog,habits:{...cur,[h]:!cur[h]}}});
+  };
+  const saveToday=()=>{
+    dispatch({type:'SET_LOG',date:tod,data:{...todayLog,energy,mood}});
+    dispatch({type:'SET_JOURNAL',date:tod,text:jText});
+    setSaved(true);setTimeout(()=>setSaved(false),2000);
+  };
+  const addGoal=()=>{if(!gText.trim())return;dispatch({type:'ADD_GOAL',goal:{id:uid(),text:gText,done:false,createdAt:tod}});setGText('');};
+  const addWin=()=>{if(!wText.trim())return;dispatch({type:'ADD_WIN',win:{id:uid(),text:wText,date:tod}});setWText('');};
+  const toggleGoal=id=>dispatch({type:'TOGGLE_GOAL',id});
+  const delGoal=id=>dispatch({type:'DEL_GOAL',id});
+  const delWin=id=>dispatch({type:'DEL_WIN',id});
+  const saveHabits=h=>{dispatch({type:'SET_FIELDS',section:'habit',fields:h});setManageHabits(false);};
+
+  const days=last7Days();
+  const chartData=days.map(d=>{
+    const l=logs[d]||{};
+    return{day:dayLabel(d),energy:l.energy||0,mood:l.mood||0,habits:Object.values(l.habits||{}).filter(Boolean).length};
+  });
+
+  const streak=useMemo(()=>{
+    let s=0;const d=new Date();
+    while(s<365){
+      const k=d.toISOString().split('T')[0];
+      const l=logs[k];
+      if(!l||Object.values(l.habits||{}).filter(Boolean).length===0)break;
+      s++;d.setDate(d.getDate()-1);
+    }return s;
+  },[logs]);
+
+  const doneToday=Object.values(todayLog.habits||{}).filter(Boolean).length;
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',gap:16}}>
+      {manageHabits&&<HabitManager habits={habits} onSave={saveHabits} onClose={()=>setManageHabits(false)}/>}
+
+      {/* Stats */}
+      <div className="stats-grid" style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10}}>
+        <StatCard value={streak} label="Day Streak" color="violet"/>
+        <StatCard value={`${doneToday}/${habits.length}`} label="Today's Habits" color="teal"/>
+        <StatCard value={wins.length} label="Wins Logged" color="teal"/>
+        <StatCard value={goals.filter(g=>!g.done).length} label="Active Goals" color="amber"/>
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:'flex',gap:3,background:'var(--bg1)',borderRadius:'var(--r)',padding:4,border:'1px solid var(--border)'}}>
+        {[['today','🌙 Today'],['trends','📈 Trends'],['goals','🎯 Goals'],['wins','⭐ Wins']].map(([k,l])=>(
+          <button key={k} onClick={()=>setTab(k)} style={{flex:1,padding:'9px 4px',borderRadius:10,border:'none',background:tab===k?'var(--bg3)':'transparent',color:tab===k?'var(--text)':'var(--text3)',fontSize:13,fontWeight:tab===k?600:400,cursor:'pointer',fontFamily:'var(--font)',transition:'all .2s'}}>{l}</button>
+        ))}
+      </div>
+
+      {/* Today */}
+      {tab==='today'&&<div style={{display:'flex',flexDirection:'column',gap:12}}>
+        <Card>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+            <Lbl style={{marginBottom:0}}>Today's Habits · {fmtShort(tod)}</Lbl>
+            <Btn onClick={()=>setManageHabits(true)} variant='ghost' size='sm'>⚙ Edit Habits</Btn>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:8}}>
+            {habits.map(h=>{
+              const done=todayLog.habits?.[h.key];
+              return(<div key={h.id} onClick={()=>toggleHabit(h.key)} style={{display:'flex',alignItems:'center',gap:10,padding:'11px 13px',borderRadius:'var(--r-sm)',background:done?'var(--violet3)':'var(--bg3)',border:`1px solid ${done?'rgba(155,140,255,.3)':'var(--border)'}`,cursor:'pointer',transition:'all .2s',userSelect:'none'}}>
+                <div style={{width:19,height:19,borderRadius:5,border:`2px solid ${done?'var(--violet)':'var(--border3)'}`,background:done?'var(--violet)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all .2s'}}>
+                  {done&&<span style={{color:'#000',fontSize:10,fontWeight:700,lineHeight:1}}>✓</span>}
+                </div>
+                <span style={{fontSize:13,color:done?'var(--violet)':'var(--text2)',fontWeight:done?600:400}}>{h.icon} {h.label}</span>
+              </div>);
+            })}
+          </div>
+          <div style={{marginTop:12}}>
+            <ProgressBar pct={habits.length?(doneToday/habits.length)*100:0} color='violet' label={`${doneToday} of ${habits.length} habits done`}/>
+          </div>
+        </Card>
+
+        <Card>
+          <Lbl style={{marginBottom:12}}>Energy & Mood</Lbl>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
+            <div>
+              <div style={{fontSize:12,color:'var(--text2)',marginBottom:8}}>⚡ Energy</div>
+              <Range value={energy} onChange={setEnergy} min={1} max={10} color='teal'/>
+            </div>
+            <div>
+              <div style={{fontSize:12,color:'var(--text2)',marginBottom:8}}>😊 Mood</div>
+              <Range value={mood} onChange={setMood} min={1} max={10} color='violet'/>
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <Lbl style={{marginBottom:8}}>✍️ Today's Reflection</Lbl>
+          <div style={{fontSize:12,color:'var(--text3)',marginBottom:8,fontStyle:'italic'}}>"What did I do today to move forward?"</div>
+          <TextArea value={jText} onChange={setJText} placeholder="Write freely — no pressure. Even one sentence counts." rows={4}/>
+        </Card>
+
+        <Btn onClick={saveToday} style={{width:'100%',justifyContent:'center',padding:'13px',fontSize:14,fontWeight:600}}>
+          {saved?'✓ Saved!':'Save Today\'s Entry'}
+        </Btn>
+      </div>}
+
+      {/* Trends */}
+      {tab==='trends'&&<div style={{display:'flex',flexDirection:'column',gap:12}}>
+        <Card>
+          <Lbl style={{marginBottom:12}}>Energy & Mood · Last 7 Days</Lbl>
+          <ResponsiveContainer width="100%" height={150}>
+            <LineChart data={chartData} margin={{top:5,right:5,bottom:0,left:-20}}>
+              <XAxis dataKey="day" tick={{fontSize:11,fill:'var(--text3)',fontFamily:'var(--font)'}} axisLine={false} tickLine={false}/>
+              <YAxis domain={[0,10]} tick={{fontSize:10,fill:'var(--text3)'}} axisLine={false} tickLine={false}/>
+              <Tooltip contentStyle={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:8,fontSize:12,fontFamily:'var(--font)'}} cursor={{stroke:'var(--border2)'}}/>
+              <Line type="monotone" dataKey="energy" stroke="var(--teal)" strokeWidth={2.5} dot={{fill:'var(--teal)',r:4,strokeWidth:0}} activeDot={{r:6}} name="Energy"/>
+              <Line type="monotone" dataKey="mood" stroke="var(--violet)" strokeWidth={2.5} dot={{fill:'var(--violet)',r:4,strokeWidth:0}} activeDot={{r:6}} name="Mood"/>
+            </LineChart>
+          </ResponsiveContainer>
+        </Card>
+        <Card>
+          <Lbl style={{marginBottom:12}}>Habits Completed · Last 7 Days</Lbl>
+          <ResponsiveContainer width="100%" height={120}>
+            <BarChart data={chartData} margin={{top:0,right:5,bottom:0,left:-20}}>
+              <XAxis dataKey="day" tick={{fontSize:11,fill:'var(--text3)',fontFamily:'var(--font)'}} axisLine={false} tickLine={false}/>
+              <YAxis hide domain={[0,habits.length]}/>
+              <Tooltip contentStyle={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:8,fontSize:12,fontFamily:'var(--font)'}} cursor={{fill:'rgba(255,255,255,.03)'}}/>
+              <Bar dataKey="habits" fill="var(--violet)" radius={[5,5,0,0]} name="Habits"/>
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+        <Card>
+          <Lbl style={{marginBottom:12}}>Recent Journal Entries</Lbl>
+          {Object.keys(journals).length===0&&<Empty icon="📝" msg="No entries yet. Start journaling today!"/>}
+          {Object.entries(journals).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,7).map(([d,t])=>(
+            <div key={d} style={{marginBottom:12,paddingBottom:12,borderBottom:'1px solid var(--border)'}}>
+              <Mono style={{marginBottom:4,display:'block'}}>{fmt(d)}</Mono>
+              <div style={{fontSize:13,color:'var(--text2)',lineHeight:1.7}}>{t||<span style={{color:'var(--text4)'}}>No entry</span>}</div>
+            </div>
+          ))}
+        </Card>
+      </div>}
+
+      {/* Goals */}
+      {tab==='goals'&&<Card>
+        <Lbl style={{marginBottom:12}}>Weekly Goals — 3-Goal Rule</Lbl>
+        <div style={{display:'flex',gap:8,marginBottom:14}}>
+          <TextIn value={gText} onChange={setGText} placeholder="Add a goal for this week…" style={{flex:1}} onKeyDown={e=>{if(e.key==='Enter')addGoal();}}/>
+          <Btn onClick={addGoal} variant='teal'>+ Add</Btn>
+        </div>
+        {goals.length===0&&<Empty icon="🎯" msg="Set your goals — what matters this week?"/>}
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {goals.map(g=>(
+            <div key={g.id} className="fade-up" style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',borderRadius:'var(--r-sm)',background:'var(--bg3)',border:`1px solid ${g.done?'rgba(0,229,176,.2)':'var(--border)'}`}}>
+              <div onClick={()=>toggleGoal(g.id)} style={{width:20,height:20,borderRadius:10,border:`2px solid ${g.done?'var(--teal)':'var(--border3)'}`,background:g.done?'var(--teal)':'transparent',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',transition:'all .2s'}}>
+                {g.done&&<span style={{color:'#000',fontSize:10,fontWeight:700}}>✓</span>}
+              </div>
+              <span style={{flex:1,fontSize:13,textDecoration:g.done?'line-through':'none',color:g.done?'var(--text3)':'var(--text)',lineHeight:1.5}}>{g.text}</span>
+              {g.done&&<Tag label="Done" color='teal'/>}
+              <Btn onClick={()=>delGoal(g.id)} variant='danger' size='sm' style={{padding:'4px 8px',fontSize:11}}>✕</Btn>
+            </div>
+          ))}
+        </div>
+      </Card>}
+
+      {/* Wins */}
+      {tab==='wins'&&<Card>
+        <Lbl style={{marginBottom:12}}>Win Log — Every Win Counts</Lbl>
+        <div style={{display:'flex',gap:8,marginBottom:14}}>
+          <TextIn value={wText} onChange={setWText} placeholder="What did you win today?" style={{flex:1}} onKeyDown={e=>{if(e.key==='Enter')addWin();}}/>
+          <Btn onClick={addWin}>+ Log</Btn>
+        </div>
+        {wins.length===0&&<Empty icon="⭐" msg="Log your first win — you deserve it!"/>}
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {wins.map(w=>(
+            <div key={w.id} className="fade-up" style={{display:'flex',alignItems:'flex-start',gap:12,padding:'12px 14px',borderRadius:'var(--r-sm)',background:'var(--bg3)',border:'1px solid var(--border)'}}>
+              <span style={{fontSize:18,flexShrink:0,marginTop:1}}>⭐</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,lineHeight:1.6}}>{w.text}</div>
+                <Mono style={{marginTop:3}}>{fmt(w.date)}</Mono>
+              </div>
+              <Btn onClick={()=>delWin(w.id)} variant='danger' size='sm' style={{padding:'4px 8px',fontSize:11}}>✕</Btn>
+            </div>
+          ))}
+        </div>
+      </Card>}
+    </div>
+  );
+}
+
+/* ── EXPORT / IMPORT ─────────────────────────────────────────────────────── */
+function DataPanel({state,onImport,onClose}){
+  const [importText,setImportText]=useState('');
+  const [msg,setMsg]=useState('');
+  const doExport=()=>{
+    const json=JSON.stringify({...state,exportedAt:new Date().toISOString()},null,2);
+    const blob=new Blob([json],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=`ar-tracker-${today()}.json`;a.click();URL.revokeObjectURL(url);
+  };
+  const doImport=()=>{
+    try{const d=JSON.parse(importText);onImport(d);setMsg('✓ Imported successfully!');setTimeout(()=>{setMsg('');onClose();},1500);}
+    catch{setMsg('✗ Invalid JSON. Please check the file.');}
+  };
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}
+      onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:'var(--r)',width:'100%',maxWidth:480,boxShadow:'var(--shadow)',padding:24}}>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:20}}>
+          <span style={{fontWeight:600,fontSize:15}}>💾 Data Manager</span>
+          <Btn onClick={onClose} variant='ghost' size='sm'>✕</Btn>
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          <Card style={{background:'var(--bg3)'}}>
+            <div style={{fontWeight:500,marginBottom:6}}>Export Data</div>
+            <div style={{fontSize:12,color:'var(--text3)',marginBottom:12}}>Download all your tracker data as a JSON file. Use this to backup or transfer to another device.</div>
+            <Btn onClick={doExport} style={{width:'100%',justifyContent:'center'}}>⬇ Download JSON Backup</Btn>
+          </Card>
+          <Card style={{background:'var(--bg3)'}}>
+            <div style={{fontWeight:500,marginBottom:6}}>Import Data</div>
+            <div style={{fontSize:12,color:'var(--text3)',marginBottom:10}}>Paste exported JSON here to restore your data.</div>
+            <TextArea value={importText} onChange={setImportText} placeholder='Paste your JSON backup here…' rows={4}/>
+            {msg&&<div style={{marginTop:8,fontSize:12,color:msg.startsWith('✓')?'var(--teal)':'var(--rose)'}}>{msg}</div>}
+            <Btn onClick={doImport} variant='violet' style={{width:'100%',justifyContent:'center',marginTop:10}}>⬆ Import & Restore</Btn>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── SETUP GUIDE ─────────────────────────────────────────────────────────── */
+function SetupGuide({onClose}){
+  const steps=[
+    {icon:'📁',title:'Download the HTML file',desc:'Click the download button above and save life-tracker.html to your computer.'},
+    {icon:'🐙',title:'Create a free GitHub account',desc:'Go to github.com and sign up for free. It takes 2 minutes.'},
+    {icon:'📦',title:'Create a new repository',desc:'Click "New" → name it "life-tracker" → make it Public → click "Create repository".'},
+    {icon:'⬆️',title:'Upload the file',desc:'On your new repo page, click "Add file" → "Upload files" → drag and drop life-tracker.html → click "Commit changes".'},
+    {icon:'⚙️',title:'Enable GitHub Pages',desc:'Go to Settings → Pages → Source: "Deploy from a branch" → Branch: "main" → Folder: "/" (root) → Save.'},
+    {icon:'⏳',title:'Wait ~2 minutes',desc:'GitHub will build your site. Then visit: https://YOUR-USERNAME.github.io/life-tracker/life-tracker.html'},
+    {icon:'📱',title:'Add to your home screen',desc:'On mobile: open Chrome → menu → "Add to Home Screen". On desktop: click the install icon in your browser address bar.'},
+    {icon:'☁️',title:'Sync across devices (optional)',desc:'Export your data as JSON from the Data Manager, then import it on another device. Or use the same GitHub Pages URL on all devices.'},
+  ];
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:1000,overflowY:'auto',padding:'20px 16px'}}
+      onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:'var(--r)',width:'100%',maxWidth:560,margin:'0 auto',boxShadow:'var(--shadow)'}}>
+        <div style={{padding:'18px 20px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,background:'var(--bg2)',borderRadius:'var(--r) var(--r) 0 0',zIndex:1}}>
+          <span style={{fontWeight:700,fontSize:16}}>🚀 Deploy Online — Step by Step</span>
+          <Btn onClick={onClose} variant='ghost' size='sm'>✕</Btn>
+        </div>
+        <div style={{padding:20}}>
+          <div style={{fontSize:13,color:'var(--text2)',marginBottom:20,padding:'12px 14px',background:'var(--teal3)',borderRadius:'var(--r-sm)',borderLeft:'3px solid var(--teal)'}}>
+            This gives you a free, permanent URL you can open on any device — phone, laptop, tablet — with no login required.
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:10}}>
+            {steps.map((s,i)=>(
+              <div key={i} style={{display:'flex',gap:14,padding:'14px 16px',background:'var(--bg3)',borderRadius:'var(--r-sm)',border:'1px solid var(--border)'}}>
+                <div style={{flexShrink:0,width:32,height:32,borderRadius:16,background:'var(--bg4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>{s.icon}</div>
+                <div>
+                  <div style={{fontWeight:600,fontSize:13,marginBottom:4}}>
+                    <span style={{color:'var(--teal)',fontFamily:'var(--mono)',marginRight:6}}>{String(i+1).padStart(2,'0')}</span>{s.title}
+                  </div>
+                  <div style={{fontSize:12,color:'var(--text2)',lineHeight:1.7}}>{s.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{marginTop:16,padding:'12px 14px',background:'var(--violet3)',borderRadius:'var(--r-sm)',borderLeft:'3px solid var(--violet)'}}>
+            <div style={{fontSize:12,color:'var(--text2)',lineHeight:1.7}}>
+              <strong style={{color:'var(--violet)'}}>Your final URL:</strong><br/>
+              <code style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--violet)'}}>https://YOUR-USERNAME.github.io/life-tracker/life-tracker.html</code><br/><br/>
+              Bookmark this URL on all your devices. Your data stays in your browser's local storage on each device — use Export/Import to move data between them.
+            </div>
+          </div>
+          <Btn onClick={onClose} style={{width:'100%',justifyContent:'center',marginTop:16,padding:'13px'}}>Got it — Let's Go! 🚀</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── ROOT REDUCER ────────────────────────────────────────────────────────── */
+function reducer(state,action){
+  switch(action.type){
+    case 'LOAD':return{...action.data};
+    case 'SET':return{...state,[action.key]:action.value,lastSaved:new Date().toISOString()};
+    case 'SET_FIELDS':return{...state,customFields:{...state.customFields,[action.section]:action.fields}};
+    case 'SET_LOG':return{...state,logs:{...state.logs,[action.date]:action.data}};
+    case 'SET_JOURNAL':return{...state,journals:{...state.journals,[action.date]:action.text}};
+    case 'ADD_GOAL':return{...state,goals:[action.goal,...state.goals]};
+    case 'TOGGLE_GOAL':return{...state,goals:state.goals.map(g=>g.id===action.id?{...g,done:!g.done}:g)};
+    case 'DEL_GOAL':return{...state,goals:state.goals.filter(g=>g.id!==action.id)};
+    case 'ADD_WIN':return{...state,wins:[action.win,...state.wins]};
+    case 'DEL_WIN':return{...state,wins:state.wins.filter(w=>w.id!==action.id)};
+    default:return state;
+  }
+}
+
+/* ── APP ─────────────────────────────────────────────────────────────────── */
+function App(){
+  const [state,dispatch]=React.useReducer(reducer,null,()=>{
+    const saved=load();
+    return saved?{...DEFAULT_STATE,...saved,customFields:{...DEFAULT_STATE.customFields,...saved.customFields}}:DEFAULT_STATE;
+  });
+  const [section,setSection]=useState('career');
+  const [showData,setShowData]=useState(false);
+  const [showGuide,setShowGuide]=useState(false);
+
+  // Auto-save
+  useEffect(()=>{save(state);},[state]);
+
+  const tabs=[
+    {id:'career',icon:'🚀',label:'Career',fullLabel:'Career Command Center'},
+    {id:'inner',icon:'💜',label:'Inner Game',fullLabel:'Inner Game Dashboard'},
+  ];
+
+  return(
+    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column'}}>
+      {showData&&<DataPanel state={state} onImport={d=>dispatch({type:'LOAD',data:{...DEFAULT_STATE,...d}})} onClose={()=>setShowData(false)}/>}
+      {showGuide&&<SetupGuide onClose={()=>setShowGuide(false)}/>}
+
+      {/* Header */}
+      <header style={{background:'var(--bg1)',borderBottom:'1px solid var(--border)',position:'sticky',top:0,zIndex:50,backdropFilter:'blur(12px)'}}>
+        <div className="header-inner" style={{maxWidth:860,margin:'0 auto',padding:'0 24px',display:'flex',alignItems:'center',height:56,gap:12}}>
+          {/* Logo */}
+          <div style={{display:'flex',alignItems:'baseline',gap:6,marginRight:8,flexShrink:0}}>
+            <span style={{fontWeight:800,fontSize:20,letterSpacing:'-1px',background:'linear-gradient(135deg,var(--teal),var(--violet))',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}>AR</span>
+            <span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text4)',letterSpacing:'0.1em'}}>LIFE.TRACK</span>
+          </div>
+
+          {/* Nav Tabs — desktop */}
+          <div className="desk-only" style={{display:'flex',gap:2,flex:1}}>
+            {tabs.map(t=>{
+              const active=section===t.id;
+              const c=t.id==='career'?'var(--teal)':'var(--violet)';
+              return(<button key={t.id} onClick={()=>setSection(t.id)} style={{padding:'6px 16px',borderRadius:8,border:'none',background:active?'var(--bg3)':'transparent',color:active?c:'var(--text3)',fontSize:13,fontWeight:active?600:400,cursor:'pointer',fontFamily:'var(--font)',transition:'all .2s',display:'flex',alignItems:'center',gap:6}}>{t.icon} {t.fullLabel}</button>);
+            })}
+          </div>
+
+          <div style={{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}}>
+            <Btn onClick={()=>setShowGuide(true)} variant='ghost' size='sm' style={{fontSize:11}} className="desk-only">🚀 Deploy Online</Btn>
+            <Btn onClick={()=>setShowData(true)} variant='ghost' size='sm' style={{fontSize:11}}>💾 Data</Btn>
+          </div>
+        </div>
+      </header>
+
+      {/* Section Banner */}
+      <div style={{background:'var(--bg1)',borderBottom:'1px solid var(--border)'}}>
+        <div className="section-banner" style={{maxWidth:860,margin:'0 auto',padding:'14px 24px',display:'flex',alignItems:'center',gap:12}}>
+          <div style={{fontSize:26}}>{tabs.find(t=>t.id===section)?.icon}</div>
+          <div>
+            <div style={{fontWeight:700,fontSize:18,letterSpacing:'-0.5px'}}>{tabs.find(t=>t.id===section)?.fullLabel}</div>
+            <div style={{fontSize:12,color:'var(--text3)',marginTop:1}}>
+              {section==='career'?'Track applications · Build skills · Own the process':'Build habits · Log energy · Celebrate every win'}
+            </div>
+          </div>
+          <div style={{marginLeft:'auto',display:'none'}} className="desk-only"/>
+          <Mono style={{marginLeft:'auto'}}>{fmtShort(today())}</Mono>
+        </div>
+      </div>
+
+      {/* Main */}
+      <main className="main-pad" style={{flex:1,padding:'24px',overflowY:'auto'}}>
+        <div style={{maxWidth:860,margin:'0 auto'}}>
+          {section==='career'
+            ?<CareerDash state={state} dispatch={dispatch}/>
+            :<InnerDash state={state} dispatch={dispatch}/>}
+        </div>
+      </main>
+
+      {/* Mobile Bottom Nav */}
+      <nav className="mob-nav" style={{display:'none',position:'fixed',bottom:0,left:0,right:0,background:'var(--bg1)',borderTop:'1px solid var(--border)',zIndex:50,backdropFilter:'blur(12px)'}}>
+        {tabs.map(t=>{
+          const active=section===t.id;
+          const c=t.id==='career'?'var(--teal)':'var(--violet)';
+          return(<button key={t.id} onClick={()=>setSection(t.id)} style={{flex:1,padding:'10px 4px 14px',border:'none',background:'transparent',color:active?c:'var(--text3)',fontSize:11,fontWeight:active?600:400,cursor:'pointer',fontFamily:'var(--font)',display:'flex',flexDirection:'column',alignItems:'center',gap:3,transition:'color .2s'}}>
+            <span style={{fontSize:20}}>{t.icon}</span>
+            <span>{t.label}</span>
+          </button>);
+        })}
+        <button onClick={()=>setShowGuide(true)} style={{flex:1,padding:'10px 4px 14px',border:'none',background:'transparent',color:'var(--text3)',fontSize:11,cursor:'pointer',fontFamily:'var(--font)',display:'flex',flexDirection:'column',alignItems:'center',gap:3}}>
+          <span style={{fontSize:20}}>🚀</span><span>Deploy</span>
+        </button>
+        <button onClick={()=>setShowData(true)} style={{flex:1,padding:'10px 4px 14px',border:'none',background:'transparent',color:'var(--text3)',fontSize:11,cursor:'pointer',fontFamily:'var(--font)',display:'flex',flexDirection:'column',alignItems:'center',gap:3}}>
+          <span style={{fontSize:20}}>💾</span><span>Data</span>
+        </button>
+      </nav>
+
+      {/* Footer — desktop only */}
+      <footer className="desk-only" style={{borderTop:'1px solid var(--border)',padding:'10px 24px',background:'var(--bg1)'}}>
+        <div style={{maxWidth:860,margin:'0 auto',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <Mono>All data auto-saved locally · Use Export/Import to sync across devices</Mono>
+          <Mono>Built for Abdul Rahman · {new Date().getFullYear()}</Mono>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+ReactDOM.render(<App/>,document.getElementById('root'));
+</script>
+</body>
+</html>
